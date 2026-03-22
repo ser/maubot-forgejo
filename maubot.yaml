@@ -1,0 +1,13 @@
+maubot: 0.6.0
+id: eu.sergevictor.forgejo
+version: 0.0.1
+license: AGPL-3.0-or-later
+modules:
+  - forgejo
+main_class: ForgejoBot
+extra_files:
+  - base-config.yaml
+database: true
+database_type: asyncpg
+webapp: true
+config: true

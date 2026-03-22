@@ -1,0 +1,5 @@
+.venv
+.ruff_cache
+uv.lock
+eu.sergevictor.forgejo*
+__pycache__

@@ -1,0 +1,308 @@
+# Forgejo instance URL
+# Create a Forgejo OAuth application at https://codeberg.org/user/settings/applications
+forgejo_url: https://codeberg.org
+
+# Forgejo OAuth application credentials
+client_id: 123ab456789cd0123456
+client_secret: 12345a6789b0123cd45e6f7g8h9i01234567890j
+
+command_options:
+  # Prefix for all the bot commands. Does not include the !
+  # if you have multiple instances of this plugin, you must use different prefixes for them
+  prefix:
+    - forgejo
+    - fg
+
+# A global webhook secret that can be used to manually created webhooks.
+# This is useful if you're self-hosting, but don't want to set up the Forgejo OAuth stuff.
+global_webhook_secret: null
+
+message_options:
+  # Message type for webhook messages.
+  msgtype: m.notice
+  # Number of seconds to wait for more webhooks before sending a message.
+  # This is used for combining label adding and other such things into one message.
+  # If set to -1, aggregations will be disabled
+  aggregation_timeout: 3
+
+# Templates are Jinja2 templates that get all the event fields as arguments,
+# like message templates do. You can insert them into messages and other
+# templates as if they were arguments.
+templates:
+  repo_prefix: <strong>[{{ repo_link(repository) }}]</strong>
+  repo_sender_prefix: "{{ templates.repo_prefix }} {{ user_link(sender) }}"
+  issue_link: "{{ issueish_link(issue) }}"
+  pr_link: "{{ issueish_link(pull_request, pull_request=True) }}"
+  label_aggregation: >
+    {% if aggregation.added_labels %}
+        added {{ util.join_human_list(aggregation.added_labels, mutate=fancy_label) }}
+        {% if not aggregation.removed_labels %} to{% endif %}
+    {% endif %}
+    {% if aggregation.removed_labels %}
+        {% if aggregation.added_labels %}
+            and
+        {% endif %}
+        removed {{ util.join_human_list(aggregation.removed_labels, mutate=fancy_label) }} from
+    {% endif %}
+
+# Macros is a single Jinja2 template that is prepended to all other templates.
+# It is useful for having macro functions that are usable anywhere.
+macros: >
+  {%- macro fancy_label(label) -%}
+      <font
+          data-mx-color="#{{ util.contrast_fg(label.color) }}"
+          data-mx-bg-color="#{{ label.color }}"
+          title="{{ label.description }}"
+      >&nbsp;{{ label.name }}&nbsp;</font>
+  {%- endmacro -%}
+
+  {%- macro fancy_labels(labels) -%}
+      {% for label in labels %}
+          {{ fancy_label(label) }}
+      {% endfor %}
+  {%- endmacro -%}
+
+  {%- macro pluralize(value) -%}
+      {% if value != 1 %}s{% endif %}
+  {%- endmacro -%}
+
+  {%- macro issueish_link(issue, pull_request=False) -%}
+      <a href="{{ issue.html_url or (forgejo_url ~ '/' ~ issue.repository.full_name ~ '/issues/' ~ issue.number) }}">
+          {{"pull request" if pull_request or issue.pull_request else "issue"}}
+          #{{ issue.number -}}
+      </a>: {{ issue.title|e }}
+  {%- endmacro -%}
+
+  {%- macro user_link(user) -%}
+      <a data-mautrix-exclude-plaintext href="{{ forgejo_url }}/{{ user.login }}">{{ (user.name or user.login)|e }}</a>
+  {%- endmacro -%}
+
+  {%- macro commit_user_link(user) -%}
+      {% if user.username %}
+          <a data-mautrix-exclude-plaintext href="{{ forgejo_url }}/{{ user.username }}">{{ user.name|e }}</a>
+      {% else %}
+          {{ user.name|e }}
+      {% endif %}
+  {%- endmacro -%}
+
+  {%- macro milestone_link(milestone, text=True) -%}
+      {% if text %}milestone {% endif %}<a data-mautrix-exclude-plaintext href="{{ milestone.html_url }}">{{ milestone.title|e }}</a>
+  {%- endmacro -%}
+
+  {%- macro repo_link(repo, important=True) -%}
+      <a data-mautrix-exclude-plaintext href="{{ repo.html_url }}">{{ repo.full_name|e }}</a>
+  {%- endmacro -%}
+
+  {%- macro personal_link(user, self_text=None, possessive=False, self=sender) -%}
+      {% if user.id == self.id %}
+          {% if self_text %}
+              {{ self_text }}
+          {% elif possessive %}
+              their
+          {% else %}
+              themselves
+          {% endif %}
+      {% else %}
+          {{ user_link(user) }}
+          {%- if possessive %}'s{% endif %}
+      {% endif %}
+  {%- endmacro -%}
+
+# Messages are the actual message templates. Each template here corresponds to
+# a specific event received through a Forgejo webhook.
+messages:
+  # Ping events are sent when the webhook is created and when it's manually pinged.
+  # Ping events are always logged, but not sent to the Matrix room by default.
+  ping: null
+
+  # This event could be used for branch/tag creations, but this example config
+  # just uses the push event for those too.
+  create: null
+
+  fork: >
+    {{ templates.repo_prefix }} Repo forked into {{ repo_link(forkee) }}
+
+  # All events that change an issue itself (i.e. everything except comments)
+  issues: >
+    {{ templates.repo_sender_prefix }}
+    {% if action == OPENED %}
+        opened {{ templates.issue_link }}<br/>
+        {% if issue.body %}
+            <blockquote>{{ issue.body|markdown }}</blockquote>
+        {% endif %}
+        {{ fancy_labels(issue.labels) }}
+    {% elif action == LABELED %}           {% do abort() %}
+    {% elif action == UNLABELED %}         {% do abort() %}
+    {% elif action == X_LABEL_AGGREGATE %} {{ templates.label_aggregation }}
+    {% elif action == MILESTONED %}        added {{ templates.issue_link }} to {{ milestone_link(milestone) }}
+    {% elif action == DEMILESTONED %}      removed {{ templates.issue_link }} from {{ milestone_link(milestone) }}
+    {% elif action == X_MILESTONE_CHANGED %} moved {{ templates.issue_link }} from {{ milestone_link(aggregation.from) }} to {{ milestone_link(aggregation.to, text=False) }}
+    {% elif action == ASSIGNED %}          assigned {{ user_link(assignee) }} to
+    {% elif action == UNASSIGNED %}        unassigned {{ user_link(assignee) }} from
+    {% else %}                             {{ action }}
+    {% endif %}
+    {% if action not in (OPENED, MILESTONED, DEMILESTONED, X_MILESTONE_CHANGED) %}
+        {{ templates.issue_link }}
+    {% endif %}
+
+  pull_request: >
+    {{ templates.repo_sender_prefix }}
+    {% if action == OPENED %}
+        {% if pull_request.draft %}drafted
+        {% else %}opened{% endif %}
+        {{ templates.pr_link }}<br/>
+        {% if pull_request.body %}
+            <blockquote>{{ pull_request.body|markdown }}</blockquote>
+        {% endif %}
+        {{ fancy_labels(pull_request.labels) }}
+    {% elif action == CLOSED %}
+      {% if pull_request.merged_at %}
+        <a data-mautrix-exclude-plaintext href="{{ repository.html_url }}/commit/{{ pull_request.merge_commit_sha }}">merged</a>
+      {% else %}
+        closed
+      {% endif %}
+    {% elif action == SYNCHRONIZE and pull_request.head.repo.id == pull_request.base.repo.id %} {% do abort() %}
+    {% elif action == SYNCHRONIZE %}pushed something to
+    {% elif action == LABELED %}           {% do abort() %}
+    {% elif action == UNLABELED %}         {% do abort() %}
+    {% elif action == EDITED %}            {% do abort() %}
+    {% elif action == X_LABEL_AGGREGATE %} {{ templates.label_aggregation }}
+    {% elif action == MILESTONED %}        added {{ templates.pr_link }} to {{ milestone_link(milestone) }}
+    {% elif action == DEMILESTONED %}      removed {{ templates.pr_link }} from {{ milestone_link(milestone) }}
+    {% elif action == X_MILESTONE_CHANGED %} moved {{ templates.pr_link }} from {{ milestone_link(aggregation.from) }} to {{ milestone_link(aggregation.to, text=False) }}
+    {% elif action == ASSIGNED %}          assigned {{ personal_link(requested_reviewer) }} to
+    {% elif action == UNASSIGNED %}        unassigned {{ personal_link(requested_reviewer) }} from
+    {% elif action == REVIEW_REQUESTED %}
+    {% if requested_reviewer.id == sender.id %}
+            self-requested a review for
+        {% else %}
+            requested a review from {{ user_link(requested_reviewer) }} for
+        {% endif %}
+    {% elif action == REVIEW_REQUEST_REMOVED %}
+        removed {{ personal_link(requested_reviewer, possessive=True) }} request for review from
+    {% elif action == READY_FOR_REVIEW %}    marked {{ templates.pr_link }} as ready for review
+    {% else %}                             {{ action }}
+    {% endif %}
+    {% if action not in (OPENED, MILESTONED, DEMILESTONED, X_MILESTONE_CHANGED, READY_FOR_REVIEW) %}
+        {{ templates.pr_link }}
+    {% endif %}
+
+  pull_request_review: >
+    {{ templates.repo_sender_prefix }}
+    {% if action == SUBMITTED %}
+        <a href="{{ review.html_url }}">{{ review.state.action_str }}</a>
+        {{ templates.pr_link }}
+        {%- if review.body %}
+            : <blockquote>{{ review.body|markdown }}</blockquote>
+        {% endif %}
+    {% else %}
+        {% do abort() %}
+    {% endif %}
+
+  # Individual comments in a pull request review.
+  # These can get spammy, so they're disabled by default.
+  pull_request_review_comment: "{% do abort() %}"
+
+  issue_comment: >
+    {{ templates.repo_sender_prefix }}
+    {% if action == CREATED %}
+        {% if aggregation.closed %}
+            closed and
+        {% elif aggregation.reopened %}
+            reopened and
+        {% endif %}
+        <a data-mautrix-exclude-plaintext href="{{ comment.html_url }}">commented</a> on {{ templates.issue_link }}:
+        <blockquote>{{ comment.body|markdown }}</blockquote>
+    {% else %}
+        {{ action }}
+        {{ personal_link(comment.user, possessive=True) }}
+        <a data-mautrix-exclude-plaintext href="{{ comment.html_url }}">comment</a> on {{ templates.issue_link }}
+    {% endif %}
+
+  push: >
+    {{ templates.repo_sender_prefix }}
+    pushed
+    {% if commits|length > 0 %}
+        {{ commits|length }} commit{{ pluralize(commits|length) }}
+    {% else %}
+        something
+    {% endif %}
+    to
+    {{ util.ref_name(ref) }}
+    {%- if commits|length > 0 %}:{% endif -%}
+    <ul>
+    {% for commit in commits %}
+        <li>
+            {% if commit %}
+                <a data-mautrix-exclude-plaintext href="{{ commit.url if commit.url else '#' }}"><code>{{ commit.id[:8] if commit.id and commit.id|length >= 8 else commit.id or '??' }}</code></a>
+                {% if commit.message and commit.message|length > 0 %}
+                    {{ util.cut_message(commit.message)|e }}
+                {% else %}
+                    <em>(no message)</em>
+                {% endif %}
+                {% if commit.author and commit.author.username != sender.login %}
+                    by {{ commit_user_link(commit.author) }}
+                {% endif %}
+            {% else %}
+                <em>(invalid commit)</em>
+            {% endif %}
+        </li>
+    {% else %}
+        <li><em>(no commits to display)</em></li>
+    {% endfor %}
+    </ul>
+
+  release: >
+    {% if action != PUBLISHED %} {% do abort() %} {% endif %}
+
+    {{ templates.repo_sender_prefix }} published
+    <a href="{{ release.html_url }}">{{ release.tag_name }}: {{ release.name }}</a>
+
+  # Meta events are sent when the webhook itself is deleted.
+  meta: >
+    {% if action != DELETED %} {% do abort() %} {% endif %}
+
+    {{ templates.repo_prefix }} Webhook deleted by {{ user_link(sender) }}
+
+  # Wiki page events.
+  gollum: >
+    {% if pages|length == 0 %}
+        {% do abort() %}
+    {% endif %}
+
+    {% macro page_link(page) %}
+        <a data-mautrix-exclude-plaintext href="{{ page.html_url }}">{{ page.title }}</a>
+        (<a href="{{ page.html_url }}/_compare/{{ page.sha }}^...{{ page.sha }}">diff</a>)
+    {% endmacro %}
+
+    {% set created, edited = [], [] %}
+    {% for page in pages %}
+        {% if page.action == CREATED %}
+            {% do created.append(page_link(page)) %}
+        {% elif page.action == EDITED %}
+            {% do edited.append(page_link(page)) %}
+        {% endif %}
+    {% endfor %}
+
+    {{ templates.repo_sender_prefix }}
+    {% if created %}
+        created {{ util.join_human_list(created) }}
+    {% endif %}
+    {% if edited %}
+        {% if created %}
+            and
+        {% endif %}
+        edited {{ util.join_human_list(edited) }}
+    {% endif %}
+    on the wiki
+
+  repository: >
+    {{ templates.repo_sender_prefix }}
+    {% if action == PUBLICIZED %}   made the repo public
+    {% elif action == PRIVATIZED %} made the repo private
+    {% elif action == TRANSFERRED %}
+        {% set source = changes.owner.from.organization or changes.owner.from.user %}
+        transferred the repo from <a href="{{ forgejo_url }}/{{ source.login }}">{{ source.login }}</a>
+    {% elif action == RENAMED %}    renamed the repo from {{ changes.repository.name.from }} to {{ repository.name }}
+    {% else %}                      {{action}} the repo
+    {% endif %}
