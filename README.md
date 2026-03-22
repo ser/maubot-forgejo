@@ -1,4 +1,4 @@
-# github
+# Forgejo
 A Forgejo webhook receiver for maubot.
 
 ## Basic setup
