@@ -57,6 +57,9 @@ A Forgejo webhook receiver for maubot.
    Once you create a webhook and track a repository, it will be tracked
    **only in the room from which you are in**.
 
+   If you want to limit a scope of the particular webhook, check its
+   properties in Forgejo.
+
 # Acknowledgements
 
 This software was written by Dr Serge Victor by re-purposing existing Github
