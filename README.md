@@ -9,7 +9,7 @@ A Forgejo webhook receiver for maubot.
 
    You have to give this new instance an `instance_id` / a name, for example "my_forgejo_bot"
 
-2. **[Register a Forgejo OAuth application](https://github.com/settings/developers) to get a `client_id` and `client_secret`.**
+2. **[Register a Forgejo OAuth application](https://codeberg.org/user/settings/applications) to get a `client_id` and `client_secret`.**
 
    For example on the Codeberg it's done on: https://codeberg.org/user/settings/applications
 
