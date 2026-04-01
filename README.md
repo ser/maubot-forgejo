@@ -1,5 +1,5 @@
-# Forgejo
-A Forgejo webhook receiver for maubot.
+# Forgejo webhooks receiver for Maubot
+A Forgejo webhook receiver for maubot. Works with Codeberg and other Forgejo based servers.
 
 ## Basic setup
 1. **Set up the plugin like any other maubot plugin.**
@@ -17,7 +17,7 @@ A Forgejo webhook receiver for maubot.
 
    Following our example, if your instance is hosted on `maubot.example.com`
    and you kept the default `plugin_base_path` i.e. `_matrix/maubot/plugin`,
-   the Github's new OAuth App's form should go like this:
+   the Forgejo's new OAuth App's form should go like this:
 
    * Application name: My Forgejo Bot
    * Homepage URL: https://maubot.example.com/
@@ -59,6 +59,8 @@ A Forgejo webhook receiver for maubot.
 
    If you want to limit a scope of the particular webhook, check its
    properties in Forgejo.
+
+5. Remember: you need a separate instance of the bot for every Forgejo server.
 
 # Acknowledgements
 
